@@ -10,28 +10,36 @@ from hausdorff import hausdorff_distance
 import pywt
 import math
 import copy
+import time
 
 import warnings
 warnings.filterwarnings("ignore")
 
 #### 数据预处理
 def readData():
-    f = open('D:/研究生/oldenburg_temp3.csv')
-    df = pd.read_csv(f, usecols=['id', 'time', 'x', 'y'])
-    df.sort_values(by=['id','time'],ascending= (True, True), inplace=True)
-    #统计id列元素的值的个数
-    #也就是每个id代表的轨迹有多少个点组成
-    counts = dict(df['id'].value_counts())
-    #小于20的删除
-    todelete = [k for k,v in counts.items() if v<20 ]
-    for key in todelete:
-        df = df[~(df['id'].isin([key]))]
-    for i in range(20,31):
-        df = df[~(df['time'].isin([i]))]
-    df = df.reset_index(drop = True)
-    df = df.values
-    arr = df.reshape(958, 20, 4)
-    return arr
+    f = open('E:/PyCharm/PycharmProjects/TTE/csvafterfilter/romaafterfilter.csv')
+    df_test = pd.read_csv(f, dtype={'taxi_id': np.uint16, 'week': np.int8, 'mday': np.uint8, 'data_time_sec': np.uint32,
+                                    'time_id': np.uint16, 'lat': np.float64, 'lon': np.float64})
+    df_test = df_test[(df_test['mday'].isin([81]))]
+    df_test['lat_interval'] = df_test['lat'] - df_test['lat'].shift(-1)
+    df_test['lon_interval'] = df_test['lon'] - df_test['lon'].shift(-1)
+    df_test = df_test[~(df_test['lat_interval'].isin([0]) & df_test['lon_interval'].isin([0]))]
+    df_test = df_test.reset_index(drop=True)
+    del df_test['lat_interval']
+    del df_test['lon_interval']
+    del df_test['week']
+    del df_test['mday']
+    del df_test['time_id']
+    df = df_test.values
+    romas = np.zeros(shape=(10000, 20, 4))
+    dfshape = 638167 - 20
+    for i in range(10000):
+        k = np.random.randint(0, high=dfshape, size=None, dtype='l')
+        for j in range(k, k + 20):
+            romas[i][j - k] = df[j]
+            romas[i][j - k][0] = i
+            romas[i][j - k][1] = j - k
+    return romas
 
 def list_sort_by_value(d):
     items = d.items()
@@ -79,32 +87,39 @@ def rebuildHaarTreeList(list):
 # 添加噪声
 def addNoise(n, eps):
     laplaceNoise = []
-    h = int(math.log(n, 2))
+    h = math.log(n, 2)
     i=0
     while(i<n):
         if(i==0):
             layernumber = 0
         else:
             layernumber = int(math.log(i, 2))
-        noise = np.random.laplace(0, (1 )/ (eps * int(math.pow(2, h - layernumber))))
+        noise = np.random.laplace(0, (1+h)/ (eps * int(math.pow(2, h - layernumber))))
         laplaceNoise.append(noise)
         i = i+1
     return laplaceNoise
 
+def mape(y_true, y_pred):
+    n = len(y_true)
+    mape = sum(np.abs((y_true - y_pred) / y_true)) / n * 100
+    return mape
 
 def myMechanism(n, e):
     a = readData()
-    labels = np.zeros(shape=(958, 20))
+    labels = np.zeros(shape=(10000, 20))
     labels.dtype = 'int64'
     cluster_centers = np.zeros(shape=(n, 40))
+    starttime = time.time()
     for i in range(20):
         # print(i)
         clf = KMeans(n_clusters=n, random_state=9)
         y_pred = clf.fit_predict(a[:, i, 2:4])
         labels[:, i] = clf.labels_
         cluster_centers[:, 2 * i:(2 * i + 2)] = clf.cluster_centers_
+    midtime = time.time()
+    mergetime = midtime-starttime
     newpaths = []
-    for i in range(958):
+    for i in range(10000):
         newpath = ""
         for j in range(20):
             string = "L" + str(labels[i, j])
@@ -114,7 +129,7 @@ def myMechanism(n, e):
     newpathsdict = dict(result)
 
     # 随机生成轨迹补足数量
-    while (len(newpathsdict) < 958):
+    while (len(newpathsdict) < 10000):
         key = ""
         for i in range(20):
             string = "L" + str(random.randint(0, n - 1))
@@ -128,7 +143,8 @@ def myMechanism(n, e):
         values.append(0)
 
     temp = buildHaarTreeList(values)
-    noise = addNoise(len(temp), 0.5)
+    # print(len(temp))
+    noise = addNoise(len(temp), e)
     c = [temp[i] + noise[i] for i in range(len(temp))]
     noisecounts = rebuildHaarTreeList(c)
 
@@ -146,25 +162,46 @@ def myMechanism(n, e):
         truecounts.append(newpathsdict2.get(item))
 
     # 根据一致性约束 trueconts 保序回归
-    x = np.arange(958)
+    x = np.arange(10000)
     y = np.array(truecounts)
     y_ = IsotonicRegression(increasing=False).fit_transform(x, y)
+    endtime = time.time()
+    dtime = endtime - starttime
 
+    print(y)
+    print(y_)
     NMI = metrics.normalized_mutual_info_score(y_, y)
+
+    mapeyy = mape(y_, y)
+    maeyy = metrics.mean_absolute_error(y, y_)
     # hausdorff_distance
-    y.resize(1,958)
-    y_.resize(1,958)
+    y.resize(1,10000)
+    y_.resize(1,10000)
+    # print(y.shape)
     hau_dis = hausdorff_distance(y, y_, distance="euclidean")
-    return NMI, hau_dis
+
+
+    return NMI, hau_dis,maeyy, mergetime, dtime
 
 nrange = [20,40,60,80]
 erange = [0.1, 0.2, 0.5, 0.8]
 nmi = []
 h_d = []
+mergetime = []
+dtime = []
+mae1 = []
 for e in erange:
     for n in nrange:
-        NMI, hau_dis = myMechanism(n, e)
+        NMI, hau_dis, Mae, Mergetime, Dtime = myMechanism(n, e)
         nmi.append(NMI)
         h_d.append(hau_dis)
+        mergetime.append(Mergetime)
+        dtime.append(Dtime)
+        mae1.append(Mae)
     print("e %f finished" %(e))
-print(nmi, h_d)
+print(nmi)
+print(h_d)
+# print(mape1)
+print(mae1)
+print(mergetime)
+print(dtime)

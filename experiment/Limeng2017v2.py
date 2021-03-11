@@ -12,7 +12,7 @@ from hausdorff import hausdorff_distance
 
 #### 数据预处理
 def readData():
-    f = open('D:/研究生/oldenburg_temp3.csv')
+    f = open('/oldenburg_temp3.csv')
     df = pd.read_csv(f, usecols=['id', 'time', 'x', 'y'])
     df.sort_values(by=['id','time'],ascending= (True, True), inplace=True)
     #统计id列元素的值的个数
@@ -101,22 +101,25 @@ def Limeng(n,b):
     # plt.plot(x,y,"r.",markersize=8)
     # plt.plot(x,y_,"g.-",markersize=8)
     # plt.show()
+    maeyy = metrics.mean_absolute_error(y_, y)
     NMI=metrics.normalized_mutual_info_score(y, y_)
     # print(NMI)
     y.resize(1,958)
     y_.resize(1,958)
     hau_dis = hausdorff_distance(y, y_, distance="euclidean")
-    return NMI, hau_dis
-    # print(vcarr.shape,vcarr)
-    # print("Hausdorfff distance test: {0}".format(hausdorff_distance(vcarr, y_, distance="euclidean")))
+    return NMI, hau_dis, maeyy
 
 nrange = [ 20,  40,  60,  80 ]
 brange = [10, 5, 2, 1.25]
 nmi = []
 h_d = []
+mae1 = []
 for b in brange:
     for n in nrange:
-        NMI, hau_dis = Limeng(n, b)
+        NMI, hau_dis, Mae = Limeng(n, b)
         nmi.append(NMI)
         h_d.append(hau_dis)
-print(nmi, h_d)
+        mae1.append(Mae)
+print(nmi)
+print(h_d)
+print(mae1)
